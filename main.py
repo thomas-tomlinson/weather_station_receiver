@@ -1,8 +1,11 @@
 from machine import Pin, UART
 import json
 import time
+import asyncio
+import binascii
+from microdot import Microdot
 
-
+app = Microdot()
 # hc-12 radio setup
 uart2 = UART(2, baudrate=9600, tx=17, rx=16)
 
@@ -13,25 +16,32 @@ def processPayload(payload):
         return None
 
     try:
-        decoded = filtered_data.decode()
+        decoded = binascii.a2b_base64(filtered_data)
         weather_data = json.loads(decoded)
         
-    except UnicodeError as e:
-        print('invalid Unicode decode: ',filtered_data)
-        return None
-    
     except ValueError as e:
-        print('json parse failed, payload: ', decoded)
+        print('decode error: ', e, 'payload: ', filtered_data)
         return None
 
     return weather_data
 
-while True:
-    if uart2.any() > 0:
-        raw_data = uart2.readline()
-        processedData = processPayload(raw_data)
-    else:
-        continue
+async def uart_listener():
+    global currentWeatherData
+    while True: 
+        await asyncio.sleep(1)
+        if uart2.any() > 0:
+            raw_data = uart2.readline()
+            processedData = processPayload(raw_data)
 
-    if processedData is not None:
-        print(processedData)
+            if processedData is not None:
+                currentWeatherData = processedData
+
+@app.route('/')
+async def index(request):
+    global currentWeatherData
+    return currentWeatherData
+
+def main():
+    asyncio.create_task(uart_listener())
+    app.run()
+main()
