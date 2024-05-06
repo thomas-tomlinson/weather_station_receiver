@@ -30,8 +30,18 @@ async def uart_listener():
     while True: 
         await asyncio.sleep(1)
         if uart2.any() > 0:
-            raw_data = uart2.readline()
-            processedData = processPayload(raw_data)
+            readbuf = b''
+            stopCharReached = False
+            # we need to read up to the first new line, then process
+            while stopCharReached is False:
+                char = uart2.read(1)
+                if char == b'\n':
+                    #break character reached, end this
+                    stopCharReached = True
+                else:
+                    readbuf = readbuf + char
+
+            processedData = processPayload(readbuf)
 
             if processedData is not None:
                 currentWeatherData = processedData
