@@ -35,6 +35,8 @@ async def uart_listener():
             # we need to read up to the first new line, then process
             while stopCharReached is False:
                 char = uart2.read(1)
+                if char is None:
+                    continue
                 if char == b'\n':
                     #break character reached, end this
                     stopCharReached = True
