@@ -6,6 +6,7 @@ import binascii
 from microdot import Microdot
 
 app = Microdot()
+currentWeatherData = {}
 # hc-12 radio setup
 uart2 = UART(2, baudrate=9600, tx=17, rx=16)
 
@@ -24,6 +25,12 @@ def processPayload(payload):
         return None
 
     return weather_data
+
+async def flash_led():
+    led_pin = Pin(23, Pin.OUT)
+    led_pin.on()
+    await asyncio.sleep_ms(500)
+    led_pin.off()
 
 async def uart_listener():
     global currentWeatherData
@@ -47,13 +54,17 @@ async def uart_listener():
 
             if processedData is not None:
                 currentWeatherData = processedData
+                # flash the status LED to indicate we received good data
+                asyncio.create_task(flash_led())
 
 @app.route('/')
 async def index(request):
     global currentWeatherData
     return currentWeatherData
 
-def main():
+async def main():
     asyncio.create_task(uart_listener())
-    app.run()
+    await app.start_server()
+
+asyncio.run(main())
 main()
