@@ -29,24 +29,40 @@ def processPayload(payload):
     if decoded is None:
         print('unpack error of payload: {}'.format(payload))
         return None
+    print("raw packed: {}".format(decoded))
     # convert to final values.  mostly metric to US but also wind and rain to real units
     decoded['rainbuckets'] = process_rain_buckets(decoded['rainbuckets'])
     decoded['avg_wind'] = process_anemometer(decoded['avg_wind'])
-    decoded['gust_wind'] = process_anemometer(decoded['avg_wind'])
+    decoded['gust_wind'] = process_anemometer(decoded['gust_wind'])
     decoded['temp'] = c_to_f(decoded['temp'])
     decoded['pressure'] = pascal_to_inhg(decoded['pressure'])
-    decoded['recordtime'] = iso8601()
+    decoded['wind_dir'] = reverse_wind_dir(decoded['wind_dir'])
+    print("processed packet: {}".format(decoded))
     return decoded
 
+def reverse_wind_dir(winddir):
+    # the as5600 is now upside down, which means the values other than 0  and 180 are wrong.
+    if winddir > 0 and winddir < 180:
+        winddir = (360 - winddir)
+    elif winddir > 180 and winddir < 360:
+        winddir = (winddir - 180)
+
+    return winddir
+
 def process_rain_buckets(count):
-    # 125 -ish counts is 30mm, = .24mm a count
-    total_inches = (count * 0.009)
+    # 115.3 pulses for is 30mm.  0.26mm / pulse
+    # 30 mm = 1.18inches. 1.18 / 115.3 = 0.01 inches a pulse 
+    total_inches = (count * 0.01)
     return total_inches
 
 def process_anemometer(count):
-    # anemometer factor is 3.2.  for now, just do a linear calc without a model
-    anemometer_factor = 3.2
-    mmps = (2 * 3.14 * count * 85 * anemometer_factor)
+    # anemometer factor 
+    #anemometer_factor = 3.95 # round 85 mm cones
+    #mmps = (2 * 3.14 * count * 85 * anemometer_factor)
+    #anemometer_factor = 4.995 # oval 58mm 
+    #mmps = (2 * 3.14 * count * 58 * anemometer_factor)
+    anemometer_factor = 5.123 # cones with 5mm lip, 79mm
+    mmps = (2 * 3.14 * count * 79 * anemometer_factor)
     mps = (mmps / 1000)
     mph = (mps * 2.237)  
     return mph
@@ -124,7 +140,6 @@ def read_bme280():
     dict['temp'] = c_to_f(rawread[0])
     dict['pressure'] = pascal_to_inhg(rawread[1])
     dict['humidity'] = rawread[2]
-    dict['recordtime'] = iso8601()
     return dict
 
 def config_hc12():
