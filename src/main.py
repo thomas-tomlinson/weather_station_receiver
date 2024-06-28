@@ -3,11 +3,11 @@ import bme280_float as bme280
 import json
 import time
 import asyncio
+import ntptime
+import esp
+import umsgpack
 from microdot import Microdot
 from microdot.websocket import with_websocket
-import ntptime
-import network
-import esp
 from struct import unpack
 
 app = Microdot()
@@ -25,20 +25,60 @@ def iso8601():
     return iso8601
 
 def processPayload(payload):
-    decoded = unpack_data(payload)
-    if decoded is None:
-        print('unpack error of payload: {}'.format(payload))
+    decoded = {}
+    actual_data = verify_payload(payload)
+    if actual_data is None:
+        print('data failed checksum.  raw data: {}'.format(actual_data))
         return None
-    print("raw packed: {}".format(decoded))
+    else:
+        decoded = actual_data
+    print("decoded data: {}".format(decoded))
     # convert to final values.  mostly metric to US but also wind and rain to real units
-    decoded['rainbuckets'] = process_rain_buckets(decoded['rainbuckets'])
-    decoded['avg_wind'] = process_anemometer(decoded['avg_wind'])
-    decoded['gust_wind'] = process_anemometer(decoded['gust_wind'])
-    decoded['temp'] = c_to_f(decoded['temp'])
-    decoded['pressure'] = pascal_to_inhg(decoded['pressure'])
-    decoded['wind_dir'] = reverse_wind_dir(decoded['wind_dir'])
+    #decoded['rainbuckets'] = process_rain_buckets(decoded['rainbuckets'])
+    decoded = update_value(decoded, 'rainbuckets', process_rain_buckets)
+    decoded = update_value(decoded, 'rainbuckets_last24', process_rain_buckets)
+    #decoded['avg_wind'] = process_anemometer(decoded['avg_wind'])
+    decoded = update_value(decoded, 'avg_wind', process_anemometer)
+    #decoded['gust_wind'] = process_anemometer(decoded['gust_wind'])
+    decoded = update_value(decoded, 'gust_wind', process_anemometer)
+    #decoded['temp'] = c_to_f(decoded['temp'])
+    decoded = update_value(decoded, 'temp', c_to_f)
+    #decoded['pressure'] = pascal_to_inhg(decoded['pressure'])
+    decoded = update_value(decoded, 'pressure', pascal_to_inhg)
+    #decoded['wind_dir'] = reverse_wind_dir(decoded['wind_dir'])
+    decoded = update_value(decoded, 'wind_dir', reverse_wind_dir)
     print("processed packet: {}".format(decoded))
     return decoded
+
+def update_value(dict, value, method):
+    if value in dict.keys():
+        dict[value] = method(dict[value])
+        return dict
+
+def verify_payload(bytes):
+    returndata = {}
+    #have to peel off last two bytes
+    checksum = bytes[-4:]
+    #print("checksum: {}, type: {}".format(checksum, type(checksum)))
+    checksum1, checksum2 = unpack(">hh", checksum)
+    data = bytes[0:0-4:]
+    datasum = sum(data)
+    data1 = int(datasum // 256)
+    data2 = int(datasum % 256)
+    #print("checksum1: {}, data1: {}".format(checksum1, data1))
+    #print("checksum2: {}, data2: {}".format(checksum2, data2))
+    if checksum1 == data1 and checksum2 == data2:
+        #checksum verified
+        unpacked_data = umsgpack.loads(data)
+        #return True, unpacked_data
+        pass
+    else:
+        return None
+    if type(unpacked_data) == 'dict':
+        #returndata = unpacked_data
+        return unpacked_data
+    else:
+        return None
 
 def reverse_wind_dir(winddir):
     # the as5600 is now upside down, which means the values other than 0  and 180 are wrong.
@@ -57,10 +97,6 @@ def process_rain_buckets(count):
 
 def process_anemometer(count):
     # anemometer factor 
-    #anemometer_factor = 3.95 # round 85 mm cones
-    #mmps = (2 * 3.14 * count * 85 * anemometer_factor)
-    #anemometer_factor = 4.995 # oval 58mm 
-    #mmps = (2 * 3.14 * count * 58 * anemometer_factor)
     anemometer_factor = 5.123 # cones with 5mm lip, 79mm
     mmps = (2 * 3.14 * count * 79 * anemometer_factor)
     mps = (mmps / 1000)
@@ -75,26 +111,6 @@ def pascal_to_inhg(pascal):
     inhg = (pascal / 3386) 
     return inhg
 
-def unpack_data(payload):
-    try:
-        unpacked = unpack(">LfHHfffffs", payload)
-    except Exception as e:
-        print('unpack error of {}'.format(e))
-        return None
-    
-    dict = {}
-    dict['timemark'] = unpacked[0]
-    dict['battery'] = unpacked[1]
-    dict['rainbuckets'] = unpacked[2]
-    dict['wind_dir'] = unpacked[3]
-    dict['avg_wind'] = unpacked[4]
-    dict['gust_wind'] = unpacked[5]
-    dict['temp'] = unpacked[6]
-    dict['humidity'] = unpacked[7]
-    dict['pressure'] = unpacked[8]
-
-    return dict
-
 async def flash_led():
     led_pin = Pin(23, Pin.OUT)
     led_pin.on()
@@ -104,7 +120,7 @@ async def flash_led():
 async def uart_listener():
     sreader = asyncio.StreamReader(uart2)
     while True: 
-        readbuf = await sreader.read(33)
+        readbuf = await umsgpack.aload(sreader)
         remote_data = processPayload(readbuf)
 
         if remote_data is None:
@@ -113,12 +129,6 @@ async def uart_listener():
         update_weather_data(remote_data)
         event.set()
         asyncio.create_task(flash_led()) # should be in update_weather_data
-
-        #    currentWeatherData['remote'] = processedData
-        #    currentWeatherData['local'] = read_bme280()
-        #    # flash the status LED to indicate we received good data
-        #    print(currentWeatherData)
-        #    asyncio.create_task(flash_led())
 
 def update_weather_data(remote_data):
     global currentWeatherData
@@ -175,7 +185,6 @@ async def main():
     config_hc12()
     asyncio.create_task(uart_listener())
     await app.start_server()
-
 
 # ensure that time is set
 while True:
