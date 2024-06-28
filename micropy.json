@@ -1,0 +1,15 @@
+{
+    "name": "weather_station_receiver",
+    "stubs": {
+        "micropython-esp32-stubs": "1.21.0.post4",
+        "micropython-stdlib-stubs": "1.1.2"
+    },
+    "dev-packages": {
+        "micropy-cli": "*"
+    },
+    "packages": {},
+    "config": {
+        "vscode": true,
+        "pylint": true
+    }
+}

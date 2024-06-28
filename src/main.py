@@ -186,4 +186,3 @@ while True:
         time.sleep(2)
 
 asyncio.run(main())
-main()
