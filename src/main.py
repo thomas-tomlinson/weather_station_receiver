@@ -128,6 +128,7 @@ def update_weather_data(remote_data):
 
 def retrieve_weather_data(format=None):
     global currentWeatherData
+    currentWeatherData['requesttime'] = iso8601()
     if format == "json":
         return json.dumps(currentWeatherData)        
     else:
@@ -157,8 +158,8 @@ def config_hc12():
 
 @app.route('/')
 async def index(request):
+    wdata = {}
     wdata = retrieve_weather_data()
-    wdata['requesttime'] = iso8601()
     return wdata
 
 @app.route('/weather_stream')
@@ -186,4 +187,3 @@ while True:
         time.sleep(2)
 
 asyncio.run(main())
-main()

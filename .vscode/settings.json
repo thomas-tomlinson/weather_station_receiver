@@ -1,0 +1,22 @@
+{
+    // Loaded Stubs:  micropython-esp32-stubs  micropython-stdlib-stubs 
+    
+    "python.languageServer": "Pylance",
+    "python.analysis.autoSearchPath": true,
+    "python.autoComplete.extraPaths": [".micropy/micropython_esp32_stubs-1.21.0.post4", ".micropy/micropython_stdlib_stubs-1.1.2/stdlib", ".micropy/BradenM-micropy-stubs-4f5a52a/frozen", ".micropy/weather_station_receiver"],
+    "python.analysis.diagnosticSeverityOverrides": { "reportMissingModuleSource": "none" },
+    "python.analysis.typeCheckingMode": "basic",
+    "python.autoComplete.typeshedPaths":  [".micropy/micropython_esp32_stubs-1.21.0.post4", ".micropy/micropython_stdlib_stubs-1.1.2/stdlib", ".micropy/BradenM-micropy-stubs-4f5a52a/frozen", ".micropy/weather_station_receiver", "typings"],
+    "python.analysis.typeshedPaths":  [".micropy/micropython_esp32_stubs-1.21.0.post4", ".micropy/micropython_stdlib_stubs-1.1.2/stdlib", ".micropy/BradenM-micropy-stubs-4f5a52a/frozen", ".micropy/weather_station_receiver", "typings"],
+    
+    
+
+    "python.linting.enabled": true,
+    "python.linting.pylintEnabled": true,
+    "python.analysis.extraPaths": [
+        ".micropy/micropython_esp32_stubs-1.21.0.post4",
+        ".micropy/micropython_stdlib_stubs-1.1.2/stdlib",
+        ".micropy/BradenM-micropy-stubs-4f5a52a/frozen",
+        ".micropy/weather_station_receiver"
+    ]
+}
