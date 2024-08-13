@@ -6,6 +6,7 @@ import asyncio
 import ntptime
 import esp
 import umsgpack
+import gc
 from microdot import Microdot
 from microdot.websocket import with_websocket
 from struct import unpack
@@ -25,14 +26,14 @@ def iso8601():
     return iso8601
 
 def processPayload(payload):
-    decoded = {}
-    actual_data = verify_payload(payload)
-    if actual_data is None:
-        print('data failed checksum.  raw data: {}'.format(actual_data))
+    try:
+        decoded = verify_payload(payload)
+    except TypeError as e:
+        print('failed to verify payload: {}'.format(e))
         return None
-    else:
-        decoded = actual_data
+
     print("decoded data: {}".format(decoded))
+    print("decoded type: {}".format(type(decoded)))
     # convert to final values.  mostly metric to US but also wind and rain to real units
     #decoded['rainbuckets'] = process_rain_buckets(decoded['rainbuckets'])
     decoded = update_value(decoded, 'rainbuckets', process_rain_buckets)
@@ -57,6 +58,11 @@ def update_value(dict, value, method):
 
 def verify_payload(bytes):
     returndata = {}
+    try:
+        bytes = umsgpack.loads(bytes)
+    except Exception as e:
+        raise TypeError(e)
+
     #have to peel off last two bytes
     checksum = bytes[-4:]
     #print("checksum: {}, type: {}".format(checksum, type(checksum)))
@@ -69,16 +75,17 @@ def verify_payload(bytes):
     #print("checksum2: {}, data2: {}".format(checksum2, data2))
     if checksum1 == data1 and checksum2 == data2:
         #checksum verified
-        unpacked_data = umsgpack.loads(data)
-        #return True, unpacked_data
-        pass
+        try:
+            unpacked_data = umsgpack.loads(data)
+        except TypeError as e:
+            raise TypeError('checksum passed, data msgpack decode failure')
     else:
-        return None
-    if type(unpacked_data) == 'dict':
-        #returndata = unpacked_data
-        return unpacked_data
-    else:
-        return None
+        raise TypeError('checksum failed')
+    try:
+        returndata = umsgpack.loads(unpacked_data)
+    except TypeError as e:
+        raise TypeError('failed to load msgpack format')
+    return returndata
 
 def reverse_wind_dir(winddir):
     # the as5600 is now upside down, which means the values other than 0  and 180 are wrong.
@@ -118,17 +125,29 @@ async def flash_led():
     led_pin.off()
 
 async def uart_listener():
-    sreader = asyncio.StreamReader(uart2)
+    print('starting UART listener')
+    #sreader = asyncio.StreamReader(uart2)
+    holder = b''
     while True: 
-        readbuf = await umsgpack.aload(sreader)
-        remote_data = processPayload(readbuf)
-
-        if remote_data is None:
+        await asyncio.sleep_ms(100)
+        #readbuf = await umsgpack.aload(sreader)
+        buffer_l = uart2.any()
+        if buffer_l > 0:
+            buf_r = uart2.read()
+            holder += buf_r
             continue
+        if len(holder) > 0:
+            print('data packet read: {}'.format(holder))
+            remote_data = processPayload(holder)
 
-        update_weather_data(remote_data)
-        event.set()
-        asyncio.create_task(flash_led()) # should be in update_weather_data
+            if remote_data is None:
+                holder = b''
+                continue
+
+            update_weather_data(remote_data)
+            event.set()
+            asyncio.create_task(flash_led()) # should be in update_weather_data
+            holder = b''
 
 def update_weather_data(remote_data):
     global currentWeatherData
