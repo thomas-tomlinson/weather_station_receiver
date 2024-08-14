@@ -10,6 +10,7 @@ import gc
 from microdot import Microdot
 from microdot.websocket import with_websocket
 from struct import unpack
+from umqtt.simple import MQTTClient
 
 app = Microdot()
 currentWeatherData = {}
@@ -17,6 +18,8 @@ uart2 = UART(2, baudrate=9600, tx=17, rx=16)
 i2c = I2C(0, scl=Pin(22), sda=Pin(21))
 bme = bme280.BME280(i2c=i2c)
 event = asyncio.Event()
+mqtt = MQTTClient("umqtt_client", "weewx01.internal")
+
 
 esp.osdebug(True)
 
@@ -145,9 +148,18 @@ async def uart_listener():
                 continue
 
             update_weather_data(remote_data)
+            publish_mqtt(retrieve_weather_data(format='json'))
             event.set()
             asyncio.create_task(flash_led()) # should be in update_weather_data
             holder = b''
+
+def publish_mqtt(publish_payload):
+    mqtt.connect()
+    topic = b'esp32_weather_feed'
+    send_data = b''
+    send_data = send_data + publish_payload 
+    mqtt.publish(topic, send_data)
+    mqtt.disconnect()
 
 def update_weather_data(remote_data):
     global currentWeatherData
@@ -162,7 +174,6 @@ def retrieve_weather_data(format=None):
         return json.dumps(currentWeatherData)        
     else:
         return currentWeatherData
-
 
 def read_bme280():
     dict = {}
