@@ -154,11 +154,16 @@ async def uart_listener():
             holder = b''
 
 def publish_mqtt(publish_payload):
-    mqtt.connect()
+    try:
+        mqtt.connect()
+    except Exception as e:
+        print("failed to connect to mqtt server, reason: {}".format(e))
+        return None
     topic = b'esp32_weather_feed'
     send_data = b''
     send_data = send_data + publish_payload 
     mqtt.publish(topic, send_data)
+    print("published mqtt message")
     mqtt.disconnect()
 
 def update_weather_data(remote_data):
