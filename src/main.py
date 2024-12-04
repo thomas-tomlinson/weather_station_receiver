@@ -34,6 +34,9 @@ def processPayload(payload):
     except TypeError as e:
         print('failed to verify payload: {}'.format(e))
         return None
+    except ValueError as e:
+        print('failed to verify payload: {}'.format(e))
+        return None
 
     print("decoded data: {}".format(decoded))
     print("decoded type: {}".format(type(decoded)))
@@ -69,7 +72,11 @@ def verify_payload(bytes):
     #have to peel off last two bytes
     checksum = bytes[-4:]
     #print("checksum: {}, type: {}".format(checksum, type(checksum)))
-    checksum1, checksum2 = unpack(">hh", checksum)
+    try:
+        checksum1, checksum2 = unpack(">hh", checksum)
+    except ValueError:
+        raise ValueError('failed to unpack checksum') 
+
     data = bytes[0:0-4:]
     datasum = sum(data)
     data1 = int(datasum // 256)
