@@ -4,7 +4,6 @@ import json
 import time
 import asyncio
 import ntptime
-import esp
 import umsgpack
 import gc
 from microdot import Microdot
@@ -118,16 +117,34 @@ async def flash_led():
     await asyncio.sleep_ms(500)
     led_pin.off()
 
+class stream_observer:
+    def update(self, data: bytes) -> None:
+        ic = ord(data[:1])
+        if ic == 0xC4:
+            print('found header, sleeping 100ms')
+            time.sleep_ms(100)
+        print(f'{data}')
+
 async def uart_listener():
     print('starting UART listener')
-    uart_aloader = umsgpack.aloader(asyncio.StreamReader(uart2))
+    #uart_aloader = umsgpack.aloader(asyncio.StreamReader(uart2), observer=stream_observer())
+    sreader = asyncio.StreamReader(uart2)
+    buf = bytes()
     while True: 
-        try:
-            res = await uart_aloader.load()
-        except Exception as e:
-            print("aloader failed to process: {}".format(e))
-            continue
-        handle_data(res)
+        res = await sreader.read(1)
+        if ord(res) == 0xc4:
+            await asyncio.sleep_ms(500)
+            length = await sreader.read(1)
+            length = ord(length)
+            buf = await sreader.read(length)
+            handle_data(buf) 
+#        try:
+#            res = await uart_aloader.load()
+#        except Exception as e:
+#            print("aloader failed to process: {}".format(e))
+#            continue
+#        print("mem free: {}".format(gc.mem_free()))
+#        handle_data(res)
 
 def handle_data(data):
     remote_data = processPayload(data)
