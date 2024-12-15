@@ -38,7 +38,7 @@ def processPayload(payload):
     print("decoded type: {}".format(type(decoded)))
     # convert to final values.  mostly metric to US but also wind and rain to real units
     decoded = update_value(decoded, 'rainbuckets', process_rain_buckets)
-    decoded = update_value(decoded, 'rainbuckets_last24', process_rain_buckets)
+    decoded = update_value(decoded, 'rainbuckets_total', process_rain_buckets)
     decoded = update_value(decoded, 'avg_wind', process_anemometer)
     decoded = update_value(decoded, 'gust_wind', process_anemometer)
     decoded = update_value(decoded, 'temp', c_to_f)
@@ -48,8 +48,11 @@ def processPayload(payload):
     return decoded
 
 def update_value(dict, value, method):
-    if value in dict.keys():
-        dict[value] = method(dict[value])
+    try:
+        if value in dict.keys():
+            dict[value] = method(dict[value])
+            return dict
+    except:
         return dict
 
 def verify_payload(bytes):
