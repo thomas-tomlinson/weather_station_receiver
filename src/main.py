@@ -42,7 +42,7 @@ def processPayload(payload):
     decoded = update_value(decoded, 'avg_wind', process_anemometer)
     decoded = update_value(decoded, 'gust_wind', process_anemometer)
     decoded = update_value(decoded, 'temp', c_to_f)
-    decoded = update_value(decoded, 'pressure', pascal_to_inhg)
+    #decoded = update_value(decoded, 'pressure', pascal_to_inhg)
     decoded = update_value(decoded, 'wind_dir', reverse_wind_dir)
     print("processed packet: {}".format(decoded))
     return decoded
