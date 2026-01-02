@@ -4,7 +4,6 @@ import json
 import time
 import asyncio
 import ntptime
-import esp
 import umsgpack
 import gc
 from microdot import Microdot
@@ -20,9 +19,6 @@ bme = bme280.BME280(i2c=i2c)
 event = asyncio.Event()
 mqtt = MQTTClient("umqtt_client", "weewx01.internal")
 
-
-esp.osdebug(True)
-
 def iso8601():
     mytime = time.gmtime()
     iso8601 = str("{}-{:0>2}-{:0>2}T{:0>2}:{:0>2}:{:0>2}Z".format(mytime[0], mytime[1], mytime[2], mytime[3], mytime[4], mytime[5]))
@@ -34,48 +30,45 @@ def processPayload(payload):
     except TypeError as e:
         print('failed to verify payload: {}'.format(e))
         return None
+    except ValueError as e:
+        print('failed to verify payload: {}'.format(e))
+        return None
 
     print("decoded data: {}".format(decoded))
     print("decoded type: {}".format(type(decoded)))
     # convert to final values.  mostly metric to US but also wind and rain to real units
-    #decoded['rainbuckets'] = process_rain_buckets(decoded['rainbuckets'])
     decoded = update_value(decoded, 'rainbuckets', process_rain_buckets)
-    decoded = update_value(decoded, 'rainbuckets_last24', process_rain_buckets)
-    #decoded['avg_wind'] = process_anemometer(decoded['avg_wind'])
+    decoded = update_value(decoded, 'rainbuckets_total', process_rain_buckets)
     decoded = update_value(decoded, 'avg_wind', process_anemometer)
-    #decoded['gust_wind'] = process_anemometer(decoded['gust_wind'])
     decoded = update_value(decoded, 'gust_wind', process_anemometer)
-    #decoded['temp'] = c_to_f(decoded['temp'])
     decoded = update_value(decoded, 'temp', c_to_f)
-    #decoded['pressure'] = pascal_to_inhg(decoded['pressure'])
-    decoded = update_value(decoded, 'pressure', pascal_to_inhg)
-    #decoded['wind_dir'] = reverse_wind_dir(decoded['wind_dir'])
+    #decoded = update_value(decoded, 'pressure', pascal_to_inhg)
     decoded = update_value(decoded, 'wind_dir', reverse_wind_dir)
     print("processed packet: {}".format(decoded))
     return decoded
 
 def update_value(dict, value, method):
-    if value in dict.keys():
-        dict[value] = method(dict[value])
+    try:
+        if value in dict.keys():
+            dict[value] = method(dict[value])
+            return dict
+    except:
         return dict
 
 def verify_payload(bytes):
     returndata = {}
-    try:
-        bytes = umsgpack.loads(bytes)
-    except Exception as e:
-        raise TypeError(e)
-
     #have to peel off last two bytes
     checksum = bytes[-4:]
     #print("checksum: {}, type: {}".format(checksum, type(checksum)))
-    checksum1, checksum2 = unpack(">hh", checksum)
+    try:
+        checksum1, checksum2 = unpack(">hh", checksum)
+    except ValueError:
+        raise ValueError('failed to unpack checksum') 
+
     data = bytes[0:0-4:]
     datasum = sum(data)
     data1 = int(datasum // 256)
     data2 = int(datasum % 256)
-    #print("checksum1: {}, data1: {}".format(checksum1, data1))
-    #print("checksum2: {}, data2: {}".format(checksum2, data2))
     if checksum1 == data1 and checksum2 == data2:
         #checksum verified
         try:
@@ -127,31 +120,44 @@ async def flash_led():
     await asyncio.sleep_ms(500)
     led_pin.off()
 
+class stream_observer:
+    def update(self, data: bytes) -> None:
+        ic = ord(data[:1])
+        if ic == 0xC4:
+            print('found header, sleeping 100ms')
+            time.sleep_ms(100)
+        print(f'{data}')
+
 async def uart_listener():
     print('starting UART listener')
-    #sreader = asyncio.StreamReader(uart2)
-    holder = b''
+    #uart_aloader = umsgpack.aloader(asyncio.StreamReader(uart2), observer=stream_observer())
+    sreader = asyncio.StreamReader(uart2)
+    buf = bytes()
     while True: 
-        await asyncio.sleep_ms(100)
-        #readbuf = await umsgpack.aload(sreader)
-        buffer_l = uart2.any()
-        if buffer_l > 0:
-            buf_r = uart2.read()
-            holder += buf_r
-            continue
-        if len(holder) > 0:
-            print('data packet read: {}'.format(holder))
-            remote_data = processPayload(holder)
+        res = await sreader.read(1)
+        if ord(res) == 0xc4:
+            await asyncio.sleep_ms(500)
+            length = await sreader.read(1)
+            length = ord(length)
+            buf = await sreader.read(length)
+            handle_data(buf) 
+#        try:
+#            res = await uart_aloader.load()
+#        except Exception as e:
+#            print("aloader failed to process: {}".format(e))
+#            continue
+#        print("mem free: {}".format(gc.mem_free()))
+#        handle_data(res)
 
-            if remote_data is None:
-                holder = b''
-                continue
+def handle_data(data):
+    remote_data = processPayload(data)
+    if remote_data is None:
+        return
 
-            update_weather_data(remote_data)
-            publish_mqtt(retrieve_weather_data(format='json'))
-            event.set()
-            asyncio.create_task(flash_led()) # should be in update_weather_data
-            holder = b''
+    update_weather_data(remote_data)
+    publish_mqtt(retrieve_weather_data(format='json'))
+    event.set()
+    asyncio.create_task(flash_led()) # should be in update_weather_data
 
 def publish_mqtt(publish_payload):
     try:
