@@ -6,6 +6,7 @@ import asyncio
 import ntptime
 import umsgpack
 import gc
+import stats
 from microdot import Microdot
 from microdot.websocket import with_websocket
 from struct import unpack
@@ -13,6 +14,9 @@ from umqtt.simple import MQTTClient
 
 app = Microdot()
 currentWeatherData = {}
+counters = stats.STATS()
+cnames = ['packet_received', 'packet_decoded', 'checksum_failure']
+counters.add_counters(cnames)
 uart2 = UART(2, baudrate=9600, tx=17, rx=16)
 i2c = I2C(0, scl=Pin(22), sda=Pin(21))
 bme = bme280.BME280(i2c=i2c)
@@ -25,6 +29,7 @@ def iso8601():
     return iso8601
 
 def processPayload(payload):
+    counters.change('packet_received', 1)
     try:
         decoded = verify_payload(payload)
     except TypeError as e:
@@ -34,6 +39,7 @@ def processPayload(payload):
         print('failed to verify payload: {}'.format(e))
         return None
 
+    counters.change('packet_decoded', 1)
     print("decoded data: {}".format(decoded))
     print("decoded type: {}".format(type(decoded)))
     # convert to final values.  mostly metric to US but also wind and rain to real units
@@ -135,6 +141,7 @@ async def uart_listener():
 def handle_data(data):
     remote_data = processPayload(data)
     if remote_data is None:
+        counters.change('checksum_failure', 1)
         return
 
     update_weather_data(remote_data)
@@ -164,6 +171,7 @@ def update_weather_data(remote_data):
 def retrieve_weather_data(format=None):
     global currentWeatherData
     currentWeatherData['requesttime'] = iso8601()
+    currentWeatherData['stats'] = counters.get_counters()
     if format == "json":
         return json.dumps(currentWeatherData)
     else:
